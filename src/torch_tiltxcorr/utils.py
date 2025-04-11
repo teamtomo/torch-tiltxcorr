@@ -24,7 +24,9 @@ def apply_stretch_perpendicular_to_tilt_axis(
     M = T1 @ R1 @ S0 @ R0 @ T0
 
     # apply transform
-    image = affine_transform_image_2d(image, matrices=M, interpolation="bicubic")
+    image = affine_transform_image_2d(
+        image, matrices=M, interpolation="bicubic", yx_matrices=True
+    )
     return image
 
 
