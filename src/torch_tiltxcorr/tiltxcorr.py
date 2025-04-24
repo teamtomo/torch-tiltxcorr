@@ -35,7 +35,8 @@ def tiltxcorr(
         falloff=0.025,
         rfft=True,
         fftshift=False,
-        image_shape=(h, w)
+        image_shape=(h, w),
+        device=tilt_series.device,
     )
     sorted_tilt_series_rfft *= filter
     sorted_tilt_series = torch.fft.irfft2(sorted_tilt_series_rfft, s=(h, w))
