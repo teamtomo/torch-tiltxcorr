@@ -21,7 +21,8 @@ def apply_stretch_perpendicular_to_tilt_axis(
     R1 = R(tilt_axis_angle, yx=True)  # rotate coords to align current Y with tilt axis in image
     T1 = T(center)  # origin back to [0, 0]
 
-    M = T1 @ R1 @ S0 @ R0 @ T0
+    M = (T1 @ R1 @ S0 @ R0 @ T0)
+    M = M.to(image.device)
 
     # apply transform
     image = affine_transform_image_2d(
@@ -65,6 +66,7 @@ def transform_shift_from_stretched_image(
     R1 = R(tilt_axis_angle, yx=True) # rotate tilt axis back into
 
     M = R1 @ S0 @ R0
+    M = M.to(shift.device)
 
     # apply transform
     transformed_shift = M @ shift
