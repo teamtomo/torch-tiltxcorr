@@ -3,7 +3,7 @@ import torch
 from torch_affine_utils.transforms_2d import R, S, T
 from torch_affine_utils import homogenise_coordinates
 from torch_transform_image import affine_transform_image_2d
-from torch_fourier_filter.bandpass import bandpass_filter
+
 
 def apply_stretch_perpendicular_to_tilt_axis(
     image: torch.Tensor,
@@ -35,8 +35,8 @@ def calculate_cross_correlation(img1, img2):
     img1_fft = torch.fft.rfft2(img1)
     img2_fft = torch.fft.rfft2(img2)
     cross_power = img1_fft * torch.conj(img2_fft)
-    normalized_cross_power = cross_power / (torch.abs(cross_power) + 1e-8)
-    result = torch.fft.irfft2(normalized_cross_power, s=img1.shape)
+    cross_power = cross_power / (torch.abs(cross_power) + 1e-8)
+    result = torch.fft.irfft2(cross_power, s=img1.shape)
     result = torch.real(torch.fft.ifftshift(result, dim=(-2, -1)))
     return result
 
