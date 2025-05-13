@@ -71,11 +71,6 @@ def simulate_tilt_series(
     return tilt_series
 
 
-# import napari
-# viewer = napari.Viewer()
-# viewer.add_image(tilt_series)
-# napari.run()
-
 if __name__ == "__main__":
     # simulate volume with a few points in the xy plane
     volume = simulate_volume()
