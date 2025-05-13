@@ -36,14 +36,24 @@ def calculate_cross_correlation(img1, img2):
     img2_fft = torch.fft.rfft2(img2)
     cross_power = img1_fft * torch.conj(img2_fft)
     normalized_cross_power = cross_power / (torch.abs(cross_power) + 1e-8)
-    return torch.fft.irfft2(normalized_cross_power, s=img1.shape)
+    result = torch.fft.irfft2(normalized_cross_power, s=img1.shape)
+    result = torch.real(torch.fft.ifftshift(result, dim=(-2, -1)))
+    return result
 
 
 def get_shift_from_correlation_image(correlation_image: torch.Tensor) -> torch.Tensor:
     """shift should be applied to img2 to align with img1"""
+    h, w = correlation_image.shape  # for unraveling
+    dtype, device = correlation_image.dtype, correlation_image.device
+    image_shape = torch.as_tensor(
+        correlation_image.shape,
+        device=device,
+        dtype=dtype
+    )
+    center = torch.divide(image_shape, 2, rounding_mode="floor")
+
     flat_idx = torch.argmax(correlation_image)
-    h, w = correlation_image.shape
-    peak_y, peak_x = (flat_idx // w).item(), (flat_idx % w).item()
+    peak_y, peak_x = (flat_idx // w), (flat_idx % w)
 
     # Ensure that the max index is not on the border
     if (
@@ -53,13 +63,12 @@ def get_shift_from_correlation_image(correlation_image: torch.Tensor) -> torch.T
             or peak_x == w - 1
     ):
         # convert to shift (accounting for FFT centering)
-        dy = (peak_y - h // 2) % h - h // 2
-        dx = (peak_x - w // 2) % w - w // 2
-        return torch.tensor(
-            [dy, dx],
+        shift = torch.tensor(
+            [peak_y, peak_x],
             device=correlation_image.device,
             dtype=correlation_image.dtype
-        )
+        ) - center
+        return shift
 
     # Parabolic interpolation in the y direction
     f_y0 = correlation_image[peak_y - 1, peak_x]
@@ -73,14 +82,12 @@ def get_shift_from_correlation_image(correlation_image: torch.Tensor) -> torch.T
     f_x2 = correlation_image[peak_y, peak_x + 1]
     subpixel_peak_x = peak_x + 0.5 * (f_x0 - f_x2) / (f_x0 - 2 * f_x1 + f_x2)
 
-    # convert to shift (accounting for FFT centering)
-    subpixel_dy = (subpixel_peak_x - h // 2) % h - h // 2
-    subpixel_dx = (subpixel_peak_y - w // 2) % w - w // 2
-    return torch.tensor(
-        [subpixel_dy, subpixel_dx],
+    subpixel_shift = torch.tensor(
+        [subpixel_peak_y, subpixel_peak_x],
         device=correlation_image.device,
         dtype=correlation_image.dtype
-    )
+    ) - center
+    return subpixel_shift
 
 
 def transform_shift_from_stretched_image(
