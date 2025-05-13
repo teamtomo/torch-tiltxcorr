@@ -10,5 +10,6 @@ __author__ = "Alister Burt"
 __email__ = "alisterburt@gmail.com"
 
 from torch_tiltxcorr.tiltxcorr import tiltxcorr
+from torch_tiltxcorr.xcorr import xcorr
 
-__all__ = ['tiltxcorr']
+__all__ = ['tiltxcorr', 'xcorr']
