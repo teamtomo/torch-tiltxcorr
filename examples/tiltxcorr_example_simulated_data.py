@@ -83,7 +83,8 @@ if __name__ == "__main__":
     # setup tilt series geometry
     tilt_axis_angle = 85
     tilt_angles = np.linspace(-60, 60, num=61, endpoint=True)
-    shifts = np.random.uniform(low=-5, high=5, size=(len(tilt_angles), 2))
+    rng = np.random.default_rng(1414)
+    shifts = rng.uniform(low=-5, high=5, size=(len(tilt_angles), 2))
     shifts[tilt_angles == 0] = 0
 
     # simulate tilt series
