@@ -38,7 +38,7 @@ dependencies = [
     "torch",
     "numpy",
     "einops",
-    "torch-affine-utils",
+    "torch-affine-utils>=0.0.4",
     "torch-transform-image",
     "torch-fourier-filter",
 ]

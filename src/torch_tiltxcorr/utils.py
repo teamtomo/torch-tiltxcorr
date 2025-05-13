@@ -12,8 +12,8 @@ def apply_stretch_perpendicular_to_tilt_axis(
 ) -> torch.Tensor:
     # grab image dimensions and calculate center
     h, w = image.shape[-2:]
-    center = torch.tensor((h // 2, w // 2), device=image.device, dtype=image.dtype)
     device = image.device
+    center = torch.tensor((h // 2, w // 2), device=device, dtype=image.dtype)
 
     # construct transforms
     T0 = T(-1 * center, device=device)  # origin from array [0, 0] to center of image
