@@ -45,7 +45,8 @@ tilt_axis_angle = 45
 shifts = tiltxcorr(
     tilt_series=tilt_series,
     tilt_angles=tilt_angles,
-    tilt_axis_angle=tilt_axis_angle
+    tilt_axis_angle=tilt_axis_angle,
+    low_pass_cutoff=.5,
 )
 # shifts shape: (batch, 2) - (dy, dx) shifts which center each tilt image
 
