@@ -246,7 +246,7 @@ def tiltxcorr_no_stretch(
 
 
 def _find_shifts_for_branch_no_stretch(
-        tilt_series: torch.Tensor, edge_taper_mask: torch.Tensor,
+        tilt_series: torch.Tensor,
 ) -> torch.Tensor:
     # Initialize shifts tensor
     leaf_shifts = torch.zeros(
