@@ -2,7 +2,6 @@ from math import cos
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from torch_fourier_filter.bandpass import bandpass_filter
 from torch_grid_utils import rectangle
 
