@@ -1,5 +1,6 @@
 import einops
 import torch
+import torch.nn.functional as F
 from torch_affine_utils.transforms_2d import R, S, T
 from torch_affine_utils import homogenise_coordinates
 from torch_transform_image import affine_transform_image_2d
@@ -31,13 +32,38 @@ def apply_stretch_perpendicular_to_tilt_axis(
     return image
 
 
-def calculate_cross_correlation(img1, img2):
-    img1_fft = torch.fft.rfft2(img1)
-    img2_fft = torch.fft.rfft2(img2)
-    cross_power = img1_fft * torch.conj(img2_fft)
-    cross_power = cross_power / (torch.abs(cross_power) + 1e-8)
-    result = torch.fft.irfft2(cross_power, s=img1.shape)
-    result = torch.real(torch.fft.ifftshift(result, dim=(-2, -1)))
+def calculate_cross_correlation(
+    a: torch.Tensor, b: torch.Tensor, normalize: bool = True, pad: bool = True,
+) -> torch.Tensor:
+    """Calculate the 2D cross correlation between images of the same size.
+
+    The position of the maximum relative to the center of the image gives a shift.
+    This is the shift that when applied to `b` best aligns it to `a`.
+    """
+    if pad:
+        p = int(0.5 * min(a.shape[-2:]))
+        a = F.pad(a, [p] * 4, value=a.mean())
+        b = F.pad(b, [p] * 4, value=b.mean())
+
+    h, w = a.shape[-2:]
+    if normalize is True:
+        a_norm = einops.reduce(a**2, "... h w -> ... 1 1", reduction="mean") ** 0.5
+        b_norm = einops.reduce(b**2, "... h w -> ... 1 1", reduction="mean") ** 0.5
+        a = a / a_norm
+        b = b / b_norm
+    fta = torch.fft.rfftn(a, dim=(-2, -1))
+    ftb = torch.fft.rfftn(b, dim=(-2, -1))
+    result = fta * torch.conj(ftb)
+    # AreTomo using some like this (filtered FFT-based approach):
+    # result = result / torch.sqrt(result.abs() + .0001)
+    # result = result * b_envelope(300, a.shape, 10)
+    result = torch.fft.irfftn(result, dim=(-2, -1), s=(h, w))
+    result = torch.fft.ifftshift(result, dim=(-2, -1))
+    if normalize is True:
+        result = result / (h * w)
+
+    if pad:
+        result = F.pad(result, [-p] * 4)
     return result
 
 
@@ -57,10 +83,10 @@ def get_shift_from_correlation_image(correlation_image: torch.Tensor) -> torch.T
 
     # Ensure that the max index is not on the border
     if (
-            peak_y == 0
-            or peak_y == h - 1
-            or peak_x == 0
-            or peak_x == w - 1
+            peak_y == 1
+            or peak_y == h - 2
+            or peak_x == 1
+            or peak_x == w - 2
     ):
         # convert to shift (accounting for FFT centering)
         shift = torch.tensor(
