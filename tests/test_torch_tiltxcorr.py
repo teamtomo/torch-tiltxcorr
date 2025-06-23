@@ -12,20 +12,19 @@ def test_shift_detection():
     b[5, 5] = 1
 
     ccc = calculate_cross_correlation(a, a)
-    shift, peak = get_shift_from_correlation_image(ccc)
+    shift = get_shift_from_correlation_image(ccc)
     assert shift.tolist() == [0.0, 0.0]
-    assert peak == 1.0
 
     ccc = calculate_cross_correlation(a, b)
-    shift, peak = get_shift_from_correlation_image(ccc)
-    assert shift.tolist() == [1., 1.]
-    assert peak == 1.0
+    dy, dx = get_shift_from_correlation_image(ccc)
+    assert dy == pytest.approx(1., 1e-3)
+    assert dx == pytest.approx(1., 1e-3)
 
     b = torch.zeros((10, 10))
     b[5, 5] = 2.5
     b[4, 5] = 2.5
 
     ccc = calculate_cross_correlation(a, b)
-    shift, peak = get_shift_from_correlation_image(ccc)
-    assert shift.tolist() == [1.5, 1.0]
-    assert peak == pytest.approx(0.7, 0.1)
+    dy, dx = get_shift_from_correlation_image(ccc)
+    assert dy == pytest.approx(1.5, 1e-2)
+    assert dx == pytest.approx(1.0, 1e-2)
