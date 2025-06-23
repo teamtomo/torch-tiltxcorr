@@ -83,10 +83,10 @@ def get_shift_from_correlation_image(correlation_image: torch.Tensor) -> torch.T
 
     # Ensure that the max index is not on the border
     if (
-            peak_y == 1
-            or peak_y == h - 2
-            or peak_x == 1
-            or peak_x == w - 2
+            peak_y == 0
+            or peak_y == h - 1
+            or peak_x == 0
+            or peak_x == w - 1
     ):
         # convert to shift (accounting for FFT centering)
         shift = torch.tensor(
