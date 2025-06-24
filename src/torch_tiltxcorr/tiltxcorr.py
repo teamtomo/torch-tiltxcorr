@@ -2,14 +2,15 @@ from math import cos
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch_fourier_filter.bandpass import bandpass_filter
-from torch_grid_utils import rectangle
 
 from torch_tiltxcorr.utils import (
     apply_stretch_perpendicular_to_tilt_axis,
     calculate_cross_correlation,
     get_shift_from_correlation_image,
     transform_shift_from_stretched_image,
+    taper_image_edges,
 )
 
 
@@ -18,20 +19,9 @@ def tiltxcorr(
     tilt_angles: torch.Tensor,  # (b, )
     tilt_axis_angle: float,
     low_pass_cutoff: float,  # cycles/px
-    taper_fraction: float = .1,  # how much of total image size is tapered
 ):
     # extract shape
     b, h, w = tilt_series.shape
-    taper_width = taper_fraction * min(h, w)
-    taper_mask_shape = (int(h - taper_width), int(w - taper_width))
-
-    # create edge taper mask
-    edge_taper_mask = rectangle(
-        dimensions=taper_mask_shape,
-        image_shape=(h, w),
-        smoothing_radius=taper_width / 2,
-        device=tilt_series.device,
-    )
 
     # sort input data by tilt angle
     tilt_angles = torch.as_tensor(tilt_angles).float()
@@ -70,7 +60,6 @@ def tiltxcorr(
         tilt_series=positive_branch_tilt_series,
         tilt_angles=positive_leaf_tilt_angles,
         tilt_axis_angle=tilt_axis_angle,
-        edge_taper_mask=edge_taper_mask,
     )
 
     # find shifts between images in negative branch
@@ -78,7 +67,6 @@ def tiltxcorr(
         tilt_series=negative_branch_tilt_series,
         tilt_angles=negative_branch_tilt_angles,
         tilt_axis_angle=tilt_axis_angle,
-        edge_taper_mask=edge_taper_mask,
     )
 
     # shifts are between adjacent pairs, take cumulative sum in each leaf
@@ -103,7 +91,6 @@ def _find_shifts_for_branch(
     tilt_series: torch.Tensor,
     tilt_angles: torch.Tensor,
     tilt_axis_angle: float,
-    edge_taper_mask: torch.Tensor,
 ):
     # Initialize shifts tensor
     leaf_shifts = torch.zeros(
@@ -122,7 +109,6 @@ def _find_shifts_for_branch(
             img1=img1, img2=img2,
             tilt_angle1=tilt_angle1, tilt_angle2=tilt_angle2,
             tilt_axis_angle=tilt_axis_angle,
-            edge_taper_mask=edge_taper_mask,
         )
 
     return leaf_shifts
@@ -134,7 +120,6 @@ def _find_shift_between_adjacent_tilt_images(
     tilt_angle1: float,
     tilt_angle2: float,
     tilt_axis_angle: float,
-    edge_taper_mask: torch.Tensor,
 ) -> torch.Tensor:
     # Get absolute tilt angles
     abs_tilt_angle1, abs_tilt_angle2 = abs(tilt_angle1), abs(tilt_angle2)
@@ -144,14 +129,21 @@ def _find_shift_between_adjacent_tilt_images(
     img2_stretched = apply_stretch_perpendicular_to_tilt_axis(
         img2, tilt_axis_angle=tilt_axis_angle, scale_factor=scale_factor
     )
+    img1, img2_stretched = (
+        taper_image_edges(img1),taper_image_edges(img2_stretched)
+    )
 
-    img1 = img1 * edge_taper_mask
-    img2_stretched = img2_stretched * edge_taper_mask
+    # pad images for cross-correlation
+    p = int(0.5 * min(img1.shape[-2:]))
+    img1 = F.pad(img1, [p] * 4, value=img1.mean())
+    img2_stretched = F.pad(img2_stretched, [p] * 4, value=img2_stretched.mean())
 
     # Calculate correlation and get shift
     correlation_image = calculate_cross_correlation(
         img1, img2_stretched
     )
+    # remove padding from the result
+    correlation_image = F.pad(correlation_image, [-p] * 4)
 
     shift = get_shift_from_correlation_image(correlation_image)
 
@@ -167,21 +159,10 @@ def tiltxcorr_no_stretch(
         tilt_series: torch.Tensor,
         tilt_angles: torch.Tensor,  # (b, )
         low_pass_cutoff: float,  # cycles/px
-        taper_fraction: float = .1,  # how much of total image size is tapered
 ) -> torch.Tensor:
     """Find coarse shifts of images without stretching along tilt axis."""
     # extract shape
     b, h, w = tilt_series.shape
-    taper_width = taper_fraction * min(h, w)
-    taper_mask_shape = (int(h - taper_width), int(w - taper_width))
-
-    # create edge taper mask
-    edge_taper_mask = rectangle(
-        dimensions=taper_mask_shape,
-        image_shape=(h, w),
-        smoothing_radius=taper_width / 2,
-        device=tilt_series.device,
-    )
 
     # sort input data by tilt angle
     tilt_angles = torch.as_tensor(tilt_angles).float()
@@ -202,8 +183,6 @@ def tiltxcorr_no_stretch(
     )
     sorted_tilt_series_rfft *= filter
     sorted_tilt_series = torch.fft.irfft2(sorted_tilt_series_rfft, s=(h, w))
-    # we wont stretch images here, so we can already taper all the edges
-    sorted_tilt_series *= edge_taper_mask
 
     # find index where tilt angle transitions from negative to positive
     transition_idx = torch.where(sorted_tilt_angles >= 0)[0][0]
@@ -273,6 +252,13 @@ def _find_shift_between_adjacent_tilt_images_no_stretch(
         img1: torch.Tensor,
         img2: torch.Tensor,
 ) -> torch.Tensor:
+    img1, img2 = (taper_image_edges(img1), taper_image_edges(img2))
+    # pad images for cross-correlation
+    p = int(0.5 * min(img1.shape[-2:]))
+    img1 = F.pad(img1, [p] * 4, value=img1.mean())
+    img2 = F.pad(img2, [p] * 4, value=img2.mean())
     correlation_image = calculate_cross_correlation(img1, img2)
+    # remove padding from the result
+    correlation_image = F.pad(correlation_image, [-p] * 4)
     shift = get_shift_from_correlation_image(correlation_image)
     return shift

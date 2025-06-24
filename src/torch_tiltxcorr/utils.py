@@ -1,9 +1,13 @@
 import einops
 import torch
-import torch.nn.functional as F
 from torch_affine_utils.transforms_2d import R, S, T
 from torch_affine_utils import homogenise_coordinates
 from torch_transform_image import affine_transform_image_2d
+from functools import lru_cache
+from torch_grid_utils import rectangle
+
+# we only expect to need one cache for this
+rectangle_mask_cached = lru_cache(maxsize=1)(rectangle)
 
 
 def apply_stretch_perpendicular_to_tilt_axis(
@@ -32,25 +36,32 @@ def apply_stretch_perpendicular_to_tilt_axis(
     return image
 
 
+def taper_image_edges(image: torch.Tensor) -> torch.Tensor:
+    # calculate the size of the edge taper
+    h, w = image.shape[-2:]
+    taper_width = 0.1 * min(h, w)
+    taper_mask_shape = (int(h - taper_width), int(w - taper_width))
+
+    # create edge taper mask
+    edge_taper_mask = rectangle_mask_cached(
+        dimensions=taper_mask_shape,
+        image_shape=(h, w),
+        smoothing_radius=taper_width / 2,
+        device=image.device,
+    )
+    image = image * edge_taper_mask
+    return image
+
+
 def calculate_cross_correlation(
-    a: torch.Tensor, b: torch.Tensor, normalize: bool = True, pad: bool = True,
+    a: torch.Tensor, b: torch.Tensor,
 ) -> torch.Tensor:
     """Calculate the 2D cross correlation between images of the same size.
 
     The position of the maximum relative to the center of the image gives a shift.
     This is the shift that when applied to `b` best aligns it to `a`.
     """
-    if pad:
-        p = int(0.5 * min(a.shape[-2:]))
-        a = F.pad(a, [p] * 4, value=a.mean())
-        b = F.pad(b, [p] * 4, value=b.mean())
-
     h, w = a.shape[-2:]
-    if normalize is True:
-        a_norm = einops.reduce(a**2, "... h w -> ... 1 1", reduction="mean") ** 0.5
-        b_norm = einops.reduce(b**2, "... h w -> ... 1 1", reduction="mean") ** 0.5
-        a = a / a_norm
-        b = b / b_norm
     fta = torch.fft.rfftn(a, dim=(-2, -1))
     ftb = torch.fft.rfftn(b, dim=(-2, -1))
     result = fta * torch.conj(ftb)
@@ -59,11 +70,7 @@ def calculate_cross_correlation(
     # result = result * b_envelope(300, a.shape, 10)
     result = torch.fft.irfftn(result, dim=(-2, -1), s=(h, w))
     result = torch.fft.ifftshift(result, dim=(-2, -1))
-    if normalize is True:
-        result = result / (h * w)
-
-    if pad:
-        result = F.pad(result, [-p] * 4)
+    result /= (h * w)  # normalize the result
     return result
 
 
@@ -137,3 +144,11 @@ def transform_shift_from_stretched_image(
     transformed_shift = M @ shift
     transformed_shift = transformed_shift.view((3, ))[:2]
     return transformed_shift
+
+
+def normalise_in_mask_area(image, mask):
+    n = torch.sum(mask)
+    mean = torch.sum(image * mask) / n
+    std = (torch.sum(image ** 2 * mask) / n - mean ** 2) ** 0.5
+    image = (image - mean) / std
+    return image
