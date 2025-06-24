@@ -39,7 +39,8 @@ def apply_stretch_perpendicular_to_tilt_axis(
 def taper_image_edges(image: torch.Tensor) -> torch.Tensor:
     # calculate the size of the edge taper
     h, w = image.shape[-2:]
-    taper_width = 0.1 * min(h, w)
+    # 0.1 is the fraction of padding, IMOD advises 10%
+    taper_width = min(h, w) * 0.1
     taper_mask_shape = (int(h - taper_width), int(w - taper_width))
 
     # create edge taper mask
