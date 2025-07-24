@@ -44,12 +44,11 @@ def tiltxcorr(
     sorted_tilt_series = torch.fft.irfft2(sorted_tilt_series_rfft, s=(h, w))
 
     # find index where tilt angle transitions from negative to positive
-    transition_idx = torch.where(sorted_tilt_angles >= 0)[0][0]
+    transition_idx = torch.argmin(torch.abs(sorted_tilt_angles))
 
     # grab positive branch: least positive tilt angle -> most positive tilt angles
-    # make sure the transition tilt is added to both by subtracting -1
-    positive_branch_tilt_series = sorted_tilt_series[transition_idx - 1:]
-    positive_leaf_tilt_angles = sorted_tilt_angles[transition_idx - 1:]
+    positive_branch_tilt_series = sorted_tilt_series[transition_idx:]
+    positive_leaf_tilt_angles = sorted_tilt_angles[transition_idx:]
 
     # grab negative branch: least positive tilt angle -> most negative tilt angles
     negative_branch_tilt_series = torch.flip(sorted_tilt_series[:transition_idx + 1], dims=[0])
@@ -74,10 +73,12 @@ def tiltxcorr(
     shifts = torch.zeros(size=(b, 2))
     negative_branch_shifts = torch.cumsum(negative_branch_shifts, dim=0)
     # skip one on positive branch as we added the reference tilt twice
-    positive_branch_shifts = torch.cumsum(positive_branch_shifts[1:], dim=0)
+    positive_branch_shifts = torch.cumsum(positive_branch_shifts, dim=0)
 
     # assemble ordered shifts for whole tilt series
-    shifts[:transition_idx + 1, :] = torch.flip(negative_branch_shifts, dims=(0,))
+    shifts[:transition_idx + 1, :] = (
+        torch.flip(negative_branch_shifts, dims=(0,))
+    )
     shifts[transition_idx:, :] = positive_branch_shifts
 
     # put shifts back in original order
