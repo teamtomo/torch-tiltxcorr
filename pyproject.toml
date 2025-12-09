@@ -37,8 +37,9 @@ classifiers = [
 dependencies = [
     "torch",
     "numpy",
+    "scipy",
     "einops",
-    "torch-affine-utils>=0.0.4",
+    "torch-affine-utils",
     "torch-transform-image",
     "torch-fourier-filter",
 ]

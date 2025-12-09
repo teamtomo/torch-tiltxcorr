@@ -26,7 +26,7 @@ def tiltxcorr_with_pretilt_offset(
     """
     Find optimal pretilt offset by maximizing sum of inter-image tilted cross correlations.
 
-    Uses scipy's Brent's method (bounded) for efficient gradient-free optimization.
+    Uses scipy's Brent's method (bounded).
 
     Args:
         tilt_series: Stack of tilt images (b, h, w)
@@ -37,7 +37,7 @@ def tiltxcorr_with_pretilt_offset(
         max_iter: Maximum iterations for Brent's method optimizer
 
     Returns:
-        shifts: Optimal shifts for each image (b, 2)
+        shifts: Optimal shifts for each image (b, 2) yx coords
         optimal_pretilt: Optimal pretilt offset in degrees
     """
     pretilt_min, pretilt_max = pretilt_range
