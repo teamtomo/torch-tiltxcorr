@@ -9,6 +9,12 @@ except PackageNotFoundError:
 __author__ = "Alister Burt"
 __email__ = "alisterburt@gmail.com"
 
-from torch_tiltxcorr.tiltxcorr import tiltxcorr, tiltxcorr_no_stretch
+from torch_tiltxcorr.tiltxcorr import tiltxcorr
+from torch_tiltxcorr.tiltxcorr_no_stretch import tiltxcorr_no_stretch
+from torch_tiltxcorr.tiltxcorr_with_pretilt_offset import tiltxcorr_with_pretilt_offset
 
-__all__ = ['tiltxcorr', 'tiltxcorr_no_stretch']
+__all__ = [
+    'tiltxcorr',
+    'tiltxcorr_no_stretch',
+    'tiltxcorr_with_pretilt_offset'
+]
