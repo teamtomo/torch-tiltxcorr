@@ -26,7 +26,7 @@ def tiltxcorr_with_pretilt_offset(
     """
     Find optimal pretilt offset by maximizing sum of inter-image tilted cross correlations.
 
-    Uses scipy's Brent's method (bounded).
+    Uses scipy's Brent's method (bounded) for optimization.
 
     Args:
         tilt_series: Stack of tilt images (b, h, w)
@@ -123,56 +123,48 @@ def _compute_shifts_with_pretilt(
     sorted_tilt_series_rfft *= filter
     sorted_tilt_series = torch.fft.irfft2(sorted_tilt_series_rfft, s=(h, w))
 
-    # find index where input tilt angles transition from negative to positive
+    # find index where tilt angle is closest to 0 (transition point)
     transition_idx = torch.argmin(torch.abs(sorted_tilt_angles))
 
     # apply pretilt offset to tilt angles
     sorted_tilt_angles_with_pretilt = sorted_tilt_angles + pretilt_offset
 
-    # grab positive branch: least positive tilt angle -> most positive tilt angles
-    positive_branch_tilt_series = sorted_tilt_series[transition_idx:]
-    positive_leaf_tilt_angles = sorted_tilt_angles_with_pretilt[transition_idx:]
+    # create index arrays for positive and negative branches
+    idx_positive = torch.arange(transition_idx, b, device=tilt_series.device)
+    idx_negative = torch.arange(0, transition_idx + 1, device=tilt_series.device)
 
-    # grab negative branch: least positive tilt angle -> most negative tilt angles
-    negative_branch_tilt_series = torch.flip(sorted_tilt_series[:transition_idx + 1], dims=[0])
-    negative_branch_tilt_angles = torch.flip(sorted_tilt_angles_with_pretilt[:transition_idx + 1], dims=[0])
-
-    # find shifts between images in positive branch
+    # process positive branch: from least positive -> most positive (ascending abs angles)
     positive_branch_shifts, positive_correlation = _find_shifts_for_branch(
-        tilt_series=positive_branch_tilt_series,
-        tilt_angles=positive_leaf_tilt_angles,
+        tilt_series=sorted_tilt_series[idx_positive],
+        tilt_angles=sorted_tilt_angles_with_pretilt[idx_positive],
         tilt_axis_angle=tilt_axis_angle,
     )
 
-    # find shifts between images in negative branch
+    # process negative branch: reverse so abs angles ascend, then reverse result
+    idx_negative_reversed = torch.flip(idx_negative, dims=[0])
     negative_branch_shifts, negative_correlation = _find_shifts_for_branch(
-        tilt_series=negative_branch_tilt_series,
-        tilt_angles=negative_branch_tilt_angles,
+        tilt_series=sorted_tilt_series[idx_negative_reversed],
+        tilt_angles=sorted_tilt_angles_with_pretilt[idx_negative_reversed],
         tilt_axis_angle=tilt_axis_angle,
     )
 
     # Total correlation is sum from both branches
     total_correlation = positive_correlation + negative_correlation
 
-    # shifts are between adjacent pairs, take cumulative sum in each leaf
-    # to get shifts that center each image
-    shifts = torch.zeros(size=(b, 2))
-    negative_branch_shifts = torch.cumsum(negative_branch_shifts, dim=0)
-    # skip one on positive branch as we added the reference tilt twice
+    # cumsum to get absolute shifts from reference (first image in each branch)
     positive_branch_shifts = torch.cumsum(positive_branch_shifts, dim=0)
+    negative_branch_shifts = torch.cumsum(negative_branch_shifts, dim=0)
 
-    # assemble ordered shifts for whole tilt series
-    shifts[:transition_idx + 1, :] = (
-        torch.flip(negative_branch_shifts, dims=(0,))
-    )
-    shifts[transition_idx:, :] = positive_branch_shifts
+    # assemble shifts for sorted tilt series
+    sorted_shifts = torch.zeros(size=(b, 2), device=tilt_series.device)
+    sorted_shifts[idx_positive] = positive_branch_shifts
+    sorted_shifts[idx_negative_reversed] = negative_branch_shifts
 
     # put shifts back in original order
-    shifts_original_order = torch.zeros_like(shifts)
-    for idx_unsorted, idx_sorted in enumerate(sorted_indices):
-        shifts_original_order[idx_sorted] = shifts[idx_unsorted]
+    shifts = torch.zeros_like(sorted_shifts)
+    shifts[sorted_indices] = sorted_shifts
 
-    return shifts_original_order, total_correlation
+    return shifts, total_correlation
 
 
 def _find_shifts_for_branch(
@@ -180,6 +172,9 @@ def _find_shifts_for_branch(
     tilt_angles: torch.Tensor,
     tilt_axis_angle: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    # grab dims
+    h, w = tilt_series.shape[-2:]
+
     # Initialize shifts tensor
     leaf_shifts = torch.zeros(
         size=(len(tilt_series), 2),
@@ -187,26 +182,69 @@ def _find_shifts_for_branch(
         device=tilt_series.device
     )
 
-    # Accumulate total correlation across all pairs
-    total_correlation = None
+    if len(tilt_series) < 2:
+        return leaf_shifts, torch.tensor(0.0, device=tilt_series.device)
 
-    # Iterate over pairs of images in the leaf
-    for idx in range(len(tilt_series) - 1):
-        img1, img2 = tilt_series[idx], tilt_series[idx + 1]
-        tilt_angle1, tilt_angle2 = float(tilt_angles[idx]), float(tilt_angles[idx + 1])
+    # Extract all adjacent pairs at once using slicing
+    imgs1 = tilt_series[:-1]  # (n_pairs, h, w)
+    imgs2 = tilt_series[1:]   # (n_pairs, h, w)
+    angles1 = tilt_angles[:-1]  # (n_pairs,)
+    angles2 = tilt_angles[1:]   # (n_pairs,)
 
-        # store shift which aligns img2 with img1
-        shift, correlation = _find_shift_between_adjacent_tilt_images(
-            img1=img1, img2=img2,
-            tilt_angle1=tilt_angle1, tilt_angle2=tilt_angle2,
-            tilt_axis_angle=tilt_axis_angle,
+    # Compute scale factors for all pairs
+    abs_angles1 = torch.abs(angles1)
+    abs_angles2 = torch.abs(angles2)
+    scale_factors = torch.cos(torch.deg2rad(abs_angles1)) / torch.cos(torch.deg2rad(abs_angles2))
+
+    # Stretch all img2s (using list comprehension as requested, not batched)
+    imgs2_stretched = torch.stack([
+        apply_stretch_perpendicular_to_tilt_axis(
+            img2, tilt_axis_angle=tilt_axis_angle, scale_factor=float(sf)
         )
-        leaf_shifts[idx + 1] = shift
-        # Accumulate correlation (initialize on first iteration)
-        if total_correlation is None:
-            total_correlation = correlation
-        else:
-            total_correlation = total_correlation + correlation
+        for img2, sf in zip(imgs2, scale_factors)
+    ])
+
+    # taper image edges
+    imgs1_tapered = taper_image_edges(imgs1)
+    imgs2_tapered = taper_image_edges(imgs2_stretched)
+
+    # zero pad images
+    p = int(0.5 * min(h, w))
+    imgs1_padded = F.pad(imgs1_tapered, [p] * 4)
+    imgs2_padded = F.pad(imgs2_tapered, [p] * 4)
+
+    # Batch FFT and cross-correlation
+    h_pad, w_pad = imgs1_padded.shape[-2:]
+    fft1 = torch.fft.rfftn(imgs1_padded, dim=(-2, -1))  # (n_pairs, h_pad, w_pad//2+1)
+    fft2 = torch.fft.rfftn(imgs2_padded, dim=(-2, -1))  # (n_pairs, h_pad, w_pad//2+1)
+
+    correlation_images = fft1 * torch.conj(fft2)
+    correlation_images = torch.fft.irfftn(correlation_images, dim=(-2, -1), s=(h_pad, w_pad))
+    correlation_images = torch.fft.ifftshift(correlation_images, dim=(-2, -1))
+    correlation_images /= (h_pad * w_pad)
+
+    # Remove padding from correlation images
+    correlation_images = F.pad(correlation_images, [-p] * 4)
+
+    # Find shifts for each pair
+    shifts = torch.stack([
+        get_shift_from_correlation_image(corr_img)
+        for corr_img in correlation_images
+    ])
+
+    # Get correlation peaks for each pair
+    correlation_peaks = correlation_images.max(dim=-1)[0].max(dim=-1)[0]  # (n_pairs,)
+    total_correlation = correlation_peaks.sum()
+
+    # Transform shifts to account for stretching (batched)
+    transformed_shifts = transform_shifts_from_stretched_images(
+        shift=shifts,
+        tilt_axis_angle=tilt_axis_angle,
+        scale_factor=scale_factors
+    )
+
+    # Store transformed shifts
+    leaf_shifts[1:] = transformed_shifts
 
     return leaf_shifts, total_correlation
 

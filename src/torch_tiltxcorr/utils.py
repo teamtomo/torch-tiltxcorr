@@ -125,15 +125,7 @@ def transform_shifts_from_stretched_images(
     tilt_axis_angle: float,
     scale_factor: torch.Tensor | float,  # (b,) or scalar
 ) -> torch.Tensor:
-    # Handle both batched and single inputs
-    is_batched = shift.ndim == 2
-
-    if not is_batched:
-        shift = einops.rearrange("yx -> 1 yx")
-
-    # shift is now (b, 2), scale_factor is (b,)
     device = shift.device
-    batch_size = shift.shape[0]
 
     # to homogenous coordinate vectors: (b, 2) -> (b, 3, 1)
     shift_yxw = homogenise_coordinates(shift)  # (b, 3)
@@ -143,12 +135,15 @@ def transform_shifts_from_stretched_images(
     R0 = R(-1 * tilt_axis_angle, yx=True, device=device)  # (3, 3)
     R1 = R(tilt_axis_angle, yx=True, device=device)  # (3, 3)
 
-    # Create batched scale matrices, one per scale factor
-    # S expects (y_scale, x_scale), and we scale X by 1/scale_factor
+    # Create scale matrices
+    # S expects (y_scale, x_scale), and we scale x by 1/scale_factor
     scale_pairs = einops.rearrange(
-        [torch.ones(batch_size, device=device), 1.0 / scale_factor],
+        [
+            torch.ones_like(scale_factor, device=device), # y scale
+            1.0 / scale_factor # x scale
+        ],
         "yx ... -> ... yx"
-    )  # (b, 2)
+    )  # (..., 2)
     S0 = S(scale_pairs)
 
     # Compose: M = R1 @ S0 @ R0
@@ -157,11 +152,6 @@ def transform_shifts_from_stretched_images(
     # Apply batched matrix multiplication
     transformed_shift = M @ shift_yxw  # (b, 3, 3) @ (b, 3, 1) = (b, 3, 1)
     transformed_shift = transformed_shift[:, :2, 0]  # (b, 2)
-
-    # Return single or batch depending on input
-    if not is_batched:
-        transformed_shift = transformed_shift.squeeze(0)  # (2,)
-
     return transformed_shift
 
 
