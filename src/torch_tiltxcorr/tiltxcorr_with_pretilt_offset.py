@@ -9,7 +9,7 @@ from torch_fourier_filter.bandpass import bandpass_filter
 from torch_tiltxcorr.utils import (
     calculate_cross_correlation,
     get_shift_from_correlation_image,
-    transform_shift_from_stretched_image,
+    transform_shifts_from_stretched_images,
     taper_image_edges,
     apply_stretch_perpendicular_to_tilt_axis
 )
@@ -248,7 +248,7 @@ def _find_shift_between_adjacent_tilt_images(
     correlation_peak = correlation_image.max()
 
     # Transform shift to account for the fact that img2 was stretched
-    transformed_shift = transform_shift_from_stretched_image(
+    transformed_shift = transform_shifts_from_stretched_images(
         shift=shift, tilt_axis_angle=tilt_axis_angle, scale_factor=scale_factor
     )
 

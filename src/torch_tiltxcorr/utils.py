@@ -3,11 +3,7 @@ import torch
 from torch_affine_utils.transforms_2d import R, S, T
 from torch_affine_utils import homogenise_coordinates
 from torch_transform_image import affine_transform_image_2d
-from functools import lru_cache
 from torch_grid_utils import rectangle
-
-# we only expect to need one cache for this
-rectangle_mask_cached = lru_cache(maxsize=1)(rectangle)
 
 
 def apply_stretch_perpendicular_to_tilt_axis(
@@ -44,7 +40,7 @@ def taper_image_edges(image: torch.Tensor) -> torch.Tensor:
     taper_mask_shape = (int(h - taper_width), int(w - taper_width))
 
     # create edge taper mask
-    edge_taper_mask = rectangle_mask_cached(
+    edge_taper_mask = rectangle(
         dimensions=taper_mask_shape,
         image_shape=(h, w),
         smoothing_radius=taper_width / 2,
@@ -124,26 +120,48 @@ def get_shift_from_correlation_image(correlation_image: torch.Tensor) -> torch.T
     return subpixel_shift
 
 
-def transform_shift_from_stretched_image(
-    shift: torch.Tensor,
+def transform_shifts_from_stretched_images(
+    shift: torch.Tensor,  # (b, 2) or (2,)
     tilt_axis_angle: float,
-    scale_factor: float,
+    scale_factor: torch.Tensor | float,  # (b,) or scalar
 ) -> torch.Tensor:
-    # construct (3, 1) column vector with homogenous coords
-    shift = homogenise_coordinates(shift)
-    shift = einops.rearrange(shift, 'yxw -> yxw 1')
+    # Handle both batched and single inputs
+    is_batched = shift.ndim == 2
+
+    if not is_batched:
+        shift = einops.rearrange("yx -> 1 yx")
+
+    # shift is now (b, 2), scale_factor is (b,)
     device = shift.device
+    batch_size = shift.shape[0]
 
-    # compose transforms
-    R0 = R(-1 * tilt_axis_angle, yx=True, device=device)  # align tilt axis with Y
-    S0 = S((1, 1 / scale_factor), device=device) # scale X component
-    R1 = R(tilt_axis_angle, yx=True, device=device) # rotate tilt axis back into
+    # to homogenous coordinate vectors: (b, 2) -> (b, 3, 1)
+    shift_yxw = homogenise_coordinates(shift)  # (b, 3)
+    shift_yxw = einops.rearrange(shift_yxw, 'b yxw -> b yxw 1')  # (b, 3, 1)
 
-    M = R1 @ S0 @ R0
+    # Compose transforms - rotation matrices are the same for all in batch
+    R0 = R(-1 * tilt_axis_angle, yx=True, device=device)  # (3, 3)
+    R1 = R(tilt_axis_angle, yx=True, device=device)  # (3, 3)
 
-    # apply transform
-    transformed_shift = M @ shift
-    transformed_shift = transformed_shift.view((3, ))[:2]
+    # Create batched scale matrices, one per scale factor
+    # S expects (y_scale, x_scale), and we scale X by 1/scale_factor
+    scale_pairs = einops.rearrange(
+        [torch.ones(batch_size, device=device), 1.0 / scale_factor],
+        "yx ... -> ... yx"
+    )  # (b, 2)
+    S0 = S(scale_pairs)
+
+    # Compose: M = R1 @ S0 @ R0
+    M = R1 @ S0 @ R0  # (b, 3, 3)
+
+    # Apply batched matrix multiplication
+    transformed_shift = M @ shift_yxw  # (b, 3, 3) @ (b, 3, 1) = (b, 3, 1)
+    transformed_shift = transformed_shift[:, :2, 0]  # (b, 2)
+
+    # Return single or batch depending on input
+    if not is_batched:
+        transformed_shift = transformed_shift.squeeze(0)  # (2,)
+
     return transformed_shift
 
 
