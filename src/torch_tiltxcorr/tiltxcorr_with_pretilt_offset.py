@@ -72,7 +72,7 @@ def tiltxcorr_with_pretilt_offset(
         options={'maxiter': max_iter}
     )
 
-    optimal_pretilt = float(result.x)
+    optimal_pretilt_offset = float(result.x)
 
     # Get final shifts with optimal pretilt
     final_shifts, final_correlation = _compute_shifts_with_pretilt(
@@ -80,10 +80,10 @@ def tiltxcorr_with_pretilt_offset(
         tilt_angles=tilt_angles,
         tilt_axis_angle=tilt_axis_angle,
         low_pass_cutoff=low_pass_cutoff,
-        pretilt_offset=optimal_pretilt,
+        pretilt_offset=optimal_pretilt_offset,
     )
 
-    return final_shifts, optimal_pretilt
+    return final_shifts, optimal_pretilt_offset
 
 
 def _compute_shifts_with_pretilt(

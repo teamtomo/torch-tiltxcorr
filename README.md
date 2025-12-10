@@ -74,6 +74,35 @@ torch-tiltxcorr performs coarse tilt series alignment by:
    - Transforming the shift to account for the stretch applied to the image
 4. Accumulating shifts to align the entire series
 
+### With Pretilt Offset Search
+
+For samples with significant pretilt, use `tiltxcorr_with_pretilt_offset` to automatically find the optimal pretilt offset:
+
+```python
+import torch
+from torch_fourier_shift import fourier_shift_image_2d
+from torch_tiltxcorr import tiltxcorr_with_pretilt_offset
+
+# Load or create your tilt series
+tilt_series = torch.randn(61, 512, 512)
+tilt_angles = torch.linspace(-60, 60, steps=61)
+tilt_axis_angle = 45
+
+# Run tiltxcorr with pretilt offset search
+shifts, optimal_pretilt = tiltxcorr_with_pretilt_offset(
+    tilt_series=tilt_series,
+    tilt_angles=tilt_angles,
+    tilt_axis_angle=tilt_axis_angle,
+    low_pass_cutoff=0.5, # cycles/px
+    pretilt_range=(-30.0, 30.0),  # search range in degrees
+)
+# shifts shape: (batch, 2) tensor of (dy, dx) shifts which center each tilt image
+# optimal_pretilt: float value optimal pretilt offset in degrees
+
+# Apply shifts to align the tilt series
+aligned_tilt_series = fourier_shift_image_2d(tilt_series, shifts=shifts)
+```
+
 ## License
 
 This package is distributed under the BSD 3-Clause License.
