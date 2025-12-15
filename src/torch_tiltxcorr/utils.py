@@ -130,7 +130,7 @@ def get_shift_from_correlation_image(
 
     # Upsample using Fourier rescaling
     upsample_factor = upsample_size / patch_size
-    upsampled = fourier_rescale_2d(
+    upsampled, _ = fourier_rescale_2d(
         image=patch,
         source_spacing=upsample_factor,
         target_spacing=1.0,
