@@ -19,7 +19,7 @@ def tiltxcorr_with_pretilt_offset(
     tilt_series: torch.Tensor,  # (b, h, w)
     tilt_angles: torch.Tensor,  # (b, )
     tilt_axis_angle: float,
-    low_pass_cutoff: float,  # cycles/px
+    low_pass_cutoff: float = 0.25,  # cycles/px
     pretilt_range: tuple[float, float] = (-30.0, 30.0),  # search range in degrees
     max_iter: int = 10,  # max iterations for Brent's method
 ) -> tuple[torch.Tensor, float]:  # (b, 2) yx shifts and optimal pretilt offset
