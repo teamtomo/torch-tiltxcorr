@@ -123,11 +123,11 @@ def _compute_shifts_with_pretilt(
     sorted_tilt_series_rfft *= filter
     sorted_tilt_series = torch.fft.irfft2(sorted_tilt_series_rfft, s=(h, w))
 
-    # find index where tilt angle is closest to 0 (transition point)
-    transition_idx = torch.argmin(torch.abs(sorted_tilt_angles))
-
     # apply pretilt offset to tilt angles
     sorted_tilt_angles_with_pretilt = sorted_tilt_angles + pretilt_offset
+    
+    # find index where tilt angle is closest to 0 (transition point)
+    transition_idx = torch.argmin(torch.abs(sorted_tilt_angles_with_pretilt))
 
     # create index arrays for positive and negative branches
     idx_positive = torch.arange(transition_idx, b, device=tilt_series.device)
