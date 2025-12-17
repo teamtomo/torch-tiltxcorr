@@ -76,9 +76,10 @@ torch-tiltxcorr performs coarse tilt series alignment by:
 
 ### With Sample Tilt Estimation
 
-If a sample is physically tilted +5° around the tilt axis in the microscope, then at nominal 0° stage tilt the beam sees the sample at +5°.
+If a sample is physically rotated +5° around the microscope stage tilt axis, then at nominal 0° stage tilt the beam sees the sample at +5°.
 
-By accounting for this during tiltxcorr, we can estimate sample rotation around the tilt axis is in the microscope.
+This offset affects the correlations measured by tiltxcorr. 
+By finding the offset value that maximizes total correlation, we can estimate the true physical pre-tilt of the sample around the microscope tilt axis.
 
 ```python
 import torch
