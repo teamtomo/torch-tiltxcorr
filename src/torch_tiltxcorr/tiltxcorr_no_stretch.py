@@ -8,7 +8,8 @@ from torch_tiltxcorr.utils import taper_image_edges, calculate_cross_correlation
 def tiltxcorr_no_stretch(
     tilt_series: torch.Tensor,
     tilt_angles: torch.Tensor,  # (b, )
-    low_pass_cutoff: float,  # cycles/px
+    pixel_spacing_angstroms: float | None = None,
+    lowpass_angstroms: float | None = None,
 ) -> torch.Tensor:
     """Find coarse shifts of images without stretching along tilt axis."""
     # extract shape
@@ -22,9 +23,13 @@ def tiltxcorr_no_stretch(
 
     # rfft & filter
     sorted_tilt_series_rfft = torch.fft.rfft2(sorted_tilt_series)
+    if lowpass_angstroms is None or pixel_spacing_angstroms is None:
+        lowpass_cycles_per_pixel = 0.5
+    else:  # (Å px⁻¹) / (Å cycle⁻¹) = cycles px⁻¹
+        lowpass_cycles_per_pixel = pixel_spacing_angstroms / lowpass_angstroms
     filter = bandpass_filter(
         low=0.025,
-        high=low_pass_cutoff,
+        high=lowpass_cycles_per_pixel,
         falloff=0.025,
         rfft=True,
         fftshift=False,

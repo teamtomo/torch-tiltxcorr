@@ -149,7 +149,6 @@ def test_tiltxcorr_with_sample_tilt_estimation(
         tilt_series=tilt_series,
         tilt_angles=tilt_angles,
         tilt_axis_angle=tilt_axis_angle,
-        low_pass_cutoff=0.5,
         sample_tilt_range=(-30.0, 30.0),
         max_iter=15,
     )

@@ -90,7 +90,6 @@ if __name__ == "__main__":
         tilt_series=tilt_series,
         tilt_angles=tilt_angles,
         tilt_axis_angle=tilt_axis_angle,
-        low_pass_cutoff=0.5
     )
     shifted_tilt_series = fourier_shift_image_2d(tilt_series, shifts=shifts)
 
