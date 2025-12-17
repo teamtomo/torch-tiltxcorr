@@ -15,50 +15,54 @@ from torch_tiltxcorr.utils import (
 )
 
 
-def tiltxcorr_with_pretilt_offset(
+def tiltxcorr_with_sample_tilt_estimation(
     tilt_series: torch.Tensor,  # (b, h, w)
     tilt_angles: torch.Tensor,  # (b, )
     tilt_axis_angle: float,
     low_pass_cutoff: float,  # cycles/px
-    pretilt_range: tuple[float, float] = (-30.0, 30.0),  # search range in degrees
+    sample_tilt_range: tuple[float, float] = (-30.0, 30.0),  # search range in degrees
     max_iter: int = 10,  # max iterations for Brent's method
-) -> tuple[torch.Tensor, float]:  # (b, 2) yx shifts and optimal pretilt offset
+) -> tuple[torch.Tensor, float]:  # (b, 2) yx shifts and optimal sample tilt
     """
-    Find optimal pretilt offset by maximizing sum of inter-image tilted cross correlations.
+    Estimate stage shifts and sample tilt by maximizing sum of inter-image tilted cross correlations.
+
+    The sample tilt estimate represents sample tilt about the stage in the microscope.
+    E.g. if the sample is physically tilted +5°, then at nominal 0° the beam
+    sees the sample at +5°, and estimate_sample_tilt = +5°.
 
     Uses scipy's Brent's method (bounded) for optimization.
 
     Args:
         tilt_series: Stack of tilt images (b, h, w)
-        tilt_angles: Tilt angles for each image (b,)
+        tilt_angles: Nominal stage tilt angles for each image (b,)
         tilt_axis_angle: Angle of tilt axis in degrees
         low_pass_cutoff: Low-pass filter cutoff in cycles/px
-        pretilt_range: (min, max) range of pretilt offsets to search
+        sample_tilt_range: (min, max) range of sample tilt angles to search in degrees
         max_iter: Maximum iterations for Brent's method optimizer
 
     Returns:
         shifts: Optimal shifts for each image (b, 2) yx coords
-        optimal_pretilt: Optimal pretilt offset in degrees
+        sample_tilt: Optimal sample tilt angle in degrees
     """
-    pretilt_min, pretilt_max = pretilt_range
+    sample_tilt_min, sample_tilt_max = sample_tilt_range
 
     # Track history for correlation curve
-    pretilt_history = []
+    sample_tilt_history = []
     correlation_history = []
 
-    def objective(pretilt_offset: float) -> float:
+    def objective(sample_tilt: float) -> float:
         """Objective function: negative correlation (to minimize)."""
-        _, total_correlation = _compute_shifts_with_pretilt(
+        _, total_correlation = _compute_shifts_with_sample_tilt(
             tilt_series=tilt_series,
             tilt_angles=tilt_angles,
             tilt_axis_angle=tilt_axis_angle,
             low_pass_cutoff=low_pass_cutoff,
-            pretilt_offset=pretilt_offset,
+            sample_tilt=sample_tilt,
         )
 
         # Convert to float and store history
         correlation_val = float(total_correlation.item())
-        pretilt_history.append(pretilt_offset)
+        sample_tilt_history.append(sample_tilt)
         correlation_history.append(correlation_val)
 
         # Return negative for minimization
@@ -67,34 +71,41 @@ def tiltxcorr_with_pretilt_offset(
     # Run Brent's method optimization
     result = minimize_scalar(
         objective,
-        bounds=(pretilt_min, pretilt_max),
+        bounds=(sample_tilt_min, sample_tilt_max),
         method='bounded',
         options={'maxiter': max_iter}
     )
 
-    optimal_pretilt_offset = float(result.x)
+    estimated_sample_tilt = float(result.x)
 
-    # Get final shifts with optimal pretilt
-    final_shifts, final_correlation = _compute_shifts_with_pretilt(
+    # Get final shifts with optimal sample tilt
+    final_shifts, final_correlation = _compute_shifts_with_sample_tilt(
         tilt_series=tilt_series,
         tilt_angles=tilt_angles,
         tilt_axis_angle=tilt_axis_angle,
         low_pass_cutoff=low_pass_cutoff,
-        pretilt_offset=optimal_pretilt_offset,
+        sample_tilt=estimated_sample_tilt,
     )
 
-    return final_shifts, optimal_pretilt_offset
+    return final_shifts, estimated_sample_tilt
 
 
-def _compute_shifts_with_pretilt(
+def _compute_shifts_with_sample_tilt(
     tilt_series: torch.Tensor,
     tilt_angles: torch.Tensor,
     tilt_axis_angle: float,
     low_pass_cutoff: float,
-    pretilt_offset: float,
+    sample_tilt: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Compute shifts for a given pretilt offset and return total correlation.
+    Compute shifts for a given sample tilt angle and return total correlation.
+
+    Args:
+        tilt_series: Stack of tilt images (b, h, w)
+        tilt_angles: Nominal tilt angles (b,)
+        tilt_axis_angle: Tilt axis angle in degrees
+        low_pass_cutoff: Low-pass filter cutoff in cycles/px
+        sample_tilt: Sample tilt angle in degrees
 
     Returns:
         shifts: Computed shifts (b, 2)
@@ -126,8 +137,9 @@ def _compute_shifts_with_pretilt(
     # find index where tilt angle is closest to 0 (transition point)
     transition_idx = torch.argmin(torch.abs(sorted_tilt_angles))
 
-    # apply pretilt offset to tilt angles
-    sorted_tilt_angles_with_pretilt = sorted_tilt_angles + pretilt_offset
+    # apply sample tilt to get true tilt angles
+    # true_tilt_angle = nominal_stage_angle + sample_tilt
+    true_tilt_angles = sorted_tilt_angles + sample_tilt
 
     # create index arrays for positive and negative branches
     idx_positive = torch.arange(transition_idx, b, device=tilt_series.device)
@@ -136,7 +148,7 @@ def _compute_shifts_with_pretilt(
     # process positive branch: from least positive -> most positive (ascending abs angles)
     positive_branch_shifts, positive_correlation = _find_shifts_for_branch(
         tilt_series=sorted_tilt_series[idx_positive],
-        tilt_angles=sorted_tilt_angles_with_pretilt[idx_positive],
+        tilt_angles=true_tilt_angles[idx_positive],
         tilt_axis_angle=tilt_axis_angle,
     )
 
@@ -144,7 +156,7 @@ def _compute_shifts_with_pretilt(
     idx_negative_reversed = torch.flip(idx_negative, dims=[0])
     negative_branch_shifts, negative_correlation = _find_shifts_for_branch(
         tilt_series=sorted_tilt_series[idx_negative_reversed],
-        tilt_angles=sorted_tilt_angles_with_pretilt[idx_negative_reversed],
+        tilt_angles=true_tilt_angles[idx_negative_reversed],
         tilt_axis_angle=tilt_axis_angle,
     )
 

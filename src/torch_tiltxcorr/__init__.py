@@ -11,10 +11,10 @@ __email__ = "alisterburt@gmail.com"
 
 from torch_tiltxcorr.tiltxcorr import tiltxcorr
 from torch_tiltxcorr.tiltxcorr_no_stretch import tiltxcorr_no_stretch
-from torch_tiltxcorr.tiltxcorr_with_pretilt_offset import tiltxcorr_with_pretilt_offset
+from torch_tiltxcorr.tiltxcorr_with_sample_tilt_estimation import tiltxcorr_with_sample_tilt_estimation
 
 __all__ = [
     'tiltxcorr',
     'tiltxcorr_no_stretch',
-    'tiltxcorr_with_pretilt_offset'
+    'tiltxcorr_with_sample_tilt_estimation'
 ]
