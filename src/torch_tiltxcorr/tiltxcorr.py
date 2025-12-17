@@ -5,7 +5,6 @@ import torch
 import torch.nn.functional as F
 from torch_fourier_filter.bandpass import bandpass_filter
 
-from torch_grid_utils import rectangle
 from torch_tiltxcorr.utils import (
     apply_stretch_perpendicular_to_tilt_axis,
     calculate_cross_correlation,
@@ -19,7 +18,8 @@ def tiltxcorr(
     tilt_series: torch.Tensor,  # (b, h, w)
     tilt_angles: torch.Tensor,  # (b, )
     tilt_axis_angle: float,
-    low_pass_cutoff: float,  # cycles/px
+    pixel_spacing_angstroms: float | None = None,
+    lowpass_angstroms: float | None = None
 ) -> torch.Tensor:  # (b, 2) yx shifts
     # extract shape
     b, h, w = tilt_series.shape
@@ -32,9 +32,14 @@ def tiltxcorr(
 
     # rfft & filter
     sorted_tilt_series_rfft = torch.fft.rfft2(sorted_tilt_series)
+    if lowpass_angstroms is None or pixel_spacing_angstroms is None:
+        lowpass_cycles_per_pixel = 0.5
+    else:  # (Å px⁻¹) / (Å cycle⁻¹) = cycles px⁻¹
+        lowpass_cycles_per_pixel = pixel_spacing_angstroms / lowpass_angstroms
+
     filter = bandpass_filter(
         low=0.025,
-        high=low_pass_cutoff,
+        high=lowpass_cycles_per_pixel,
         falloff=0.025,
         rfft=True,
         fftshift=False,

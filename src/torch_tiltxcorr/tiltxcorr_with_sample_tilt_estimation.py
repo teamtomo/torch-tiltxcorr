@@ -19,7 +19,8 @@ def tiltxcorr_with_sample_tilt_estimation(
     tilt_series: torch.Tensor,  # (b, h, w)
     tilt_angles: torch.Tensor,  # (b, )
     tilt_axis_angle: float,
-    low_pass_cutoff: float,  # cycles/px
+    pixel_spacing_angstroms: float | None = None,
+    lowpass_angstroms: float | None = None,
     sample_tilt_range: tuple[float, float] = (-30.0, 30.0),  # search range in degrees
     max_iter: int = 10,  # max iterations for Brent's method
 ) -> tuple[torch.Tensor, float]:  # (b, 2) yx shifts and optimal sample tilt
@@ -36,7 +37,8 @@ def tiltxcorr_with_sample_tilt_estimation(
         tilt_series: Stack of tilt images (b, h, w)
         tilt_angles: Nominal stage tilt angles for each image (b,)
         tilt_axis_angle: Angle of tilt axis in degrees
-        low_pass_cutoff: Low-pass filter cutoff in cycles/px
+        pixel_spacing_angstroms: Pixel spacing in angstroms
+        lowpass_angstroms: Low-pass filter cutoff in angstroms
         sample_tilt_range: (min, max) range of sample tilt angles to search in degrees
         max_iter: Maximum iterations for Brent's method optimizer
 
@@ -56,7 +58,8 @@ def tiltxcorr_with_sample_tilt_estimation(
             tilt_series=tilt_series,
             tilt_angles=tilt_angles,
             tilt_axis_angle=tilt_axis_angle,
-            low_pass_cutoff=low_pass_cutoff,
+            pixel_spacing_angstroms=pixel_spacing_angstroms,
+            lowpass_angstroms=lowpass_angstroms,
             sample_tilt=sample_tilt,
         )
 
@@ -83,7 +86,8 @@ def tiltxcorr_with_sample_tilt_estimation(
         tilt_series=tilt_series,
         tilt_angles=tilt_angles,
         tilt_axis_angle=tilt_axis_angle,
-        low_pass_cutoff=low_pass_cutoff,
+        pixel_spacing_angstroms=pixel_spacing_angstroms,
+        lowpass_angstroms=lowpass_angstroms,
         sample_tilt=estimated_sample_tilt,
     )
 
@@ -94,7 +98,8 @@ def _compute_shifts_with_sample_tilt(
     tilt_series: torch.Tensor,
     tilt_angles: torch.Tensor,
     tilt_axis_angle: float,
-    low_pass_cutoff: float,
+    pixel_spacing_angstroms: float,
+    lowpass_angstroms: float,
     sample_tilt: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
@@ -104,7 +109,8 @@ def _compute_shifts_with_sample_tilt(
         tilt_series: Stack of tilt images (b, h, w)
         tilt_angles: Nominal tilt angles (b,)
         tilt_axis_angle: Tilt axis angle in degrees
-        low_pass_cutoff: Low-pass filter cutoff in cycles/px
+        pixel_spacing_angstroms: Pixel spacing in angstroms
+        lowpass_angstroms: Low-pass filter cutoff in angstroms
         sample_tilt: Sample tilt angle in degrees
 
     Returns:
@@ -122,9 +128,13 @@ def _compute_shifts_with_sample_tilt(
 
     # rfft & filter
     sorted_tilt_series_rfft = torch.fft.rfft2(sorted_tilt_series)
+    if lowpass_angstroms is None or pixel_spacing_angstroms is None:
+        lowpass_cycles_per_pixel = 0.5
+    else:  # (Å px⁻¹) / (Å cycle⁻¹) = cycles px⁻¹
+        lowpass_cycles_per_pixel = pixel_spacing_angstroms / lowpass_angstroms
     filter = bandpass_filter(
         low=0.025,
-        high=low_pass_cutoff,
+        high=lowpass_cycles_per_pixel,
         falloff=0.025,
         rfft=True,
         fftshift=False,
