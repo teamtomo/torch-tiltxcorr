@@ -94,8 +94,8 @@ def get_shift_from_correlation_image(
         2D shift vector [z, y, x]
     """
     # fix these values for now to ensure stable behaviour
-    patch_size = 16
-    upsample_size = 1024
+    patch_size: int = 16
+    upsample_size: int = 1024
     
     dtype, device = correlation_image.dtype, correlation_image.device
     shape = torch.tensor(correlation_image.shape, device=device, dtype=dtype)
