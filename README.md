@@ -42,11 +42,13 @@ tilt_angles = torch.linspace(-60, 60, steps=61)
 tilt_axis_angle = 45
 
 # Run tiltxcorr
+# (for noisy cryo-EM data, apply a lowpass to ~4x pixel size as a starting point)
 shifts = tiltxcorr(
    tilt_series=tilt_series,
    tilt_angles=tilt_angles,
    tilt_axis_angle=tilt_axis_angle,
-   lowpass_angstroms=.5,
+   pixel_spacing_angstroms=10,
+   lowpass_angstroms=40,
 )
 # shifts shape: (batch, 2) - (dy, dx) shifts which center each tilt image
 
