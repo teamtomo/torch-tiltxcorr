@@ -4,6 +4,7 @@ from torch_affine_utils.transforms_2d import R, S, T
 from torch_affine_utils import homogenise_coordinates
 from torch_transform_image import affine_transform_image_2d
 from torch_grid_utils import rectangle
+from torch_fourier_rescale import fourier_rescale_2d
 
 
 def apply_stretch_perpendicular_to_tilt_axis(
