@@ -15,7 +15,7 @@ from torch_tiltxcorr.utils import (
 )
 
 
-def _generate_shifted_tilt_series(
+def _generate_tilt_series_with_shifts(
     shift_magnitude: float = 5.0,
     d: int = 128,
     n_points_on_plane: int = 100,
@@ -56,8 +56,7 @@ def _generate_shifted_tilt_series(
     d2 = d // 2
     volume_center_zyx = torch.tensor([d2, d2, d2]).float()
 
-    # Generate points on an xy plane
-    # Create regular grid across xy
+    # Generate grid of points on the xy plane in the microscope
     y = torch.linspace(-d2, d2, steps=d)
     x = torch.linspace(-d2, d2, steps=d)
     yy, xx = torch.meshgrid(y, x, indexing="ij")
@@ -89,15 +88,19 @@ def _generate_shifted_tilt_series(
     if tilt_angles_deg is None:
         tilt_angles_deg = torch.linspace(-60, 60, steps=41)
 
-    # Setup scope2detector transformation
-    M_scope2detector = Rz(tilt_axis_angle, zyx=True) @ Ry(tilt_angles_deg, zyx=True)
+    # Setup tomogram -> scope -> detector transformations
+    M_tomo2scope = Ry(tilt_angles_deg, zyx=True)
+    M_scope2detector = Rz(tilt_axis_angle, zyx=True)
+
+    # Compose tomogram -> detector (projection) transformation
+    M_tomo2detector = M_scope2detector @ M_tomo2scope
 
     # Generate tilt series
-    M_scope2detector_rot = M_scope2detector[:, :3, :3]
-    M_scope2detector_rot_inv = torch.linalg.pinv(M_scope2detector_rot)
+    M_tomo2detector_rot = M_tomo2detector[:, :3, :3]
+    M_tomo2detector_rot_inv = torch.linalg.pinv(M_tomo2detector_rot)
     tilt_series = project_3d_to_2d(
         volume=volume_in_scope,
-        rotation_matrices=M_scope2detector_rot_inv,
+        rotation_matrices=M_tomo2detector_rot_inv,
         zyx_matrices=True,
     )
 
@@ -129,7 +132,7 @@ def test_tiltxcorr_shift_estimation(shift_magnitude: float, max_error: float):
     recenter the misaligned projection images.
     """
     # Generate tilt series with known shifts
-    tilt_series, tilt_angles, tilt_axis_angle, applied_shifts = _generate_shifted_tilt_series(
+    tilt_series, tilt_angles, tilt_axis_angle, applied_shifts = _generate_tilt_series_with_shifts(
         shift_magnitude=shift_magnitude,
         d=128,
         n_points_on_plane=100,

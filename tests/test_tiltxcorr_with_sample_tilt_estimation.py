@@ -56,7 +56,7 @@ def _generate_tilted_plane_tilt_series(
     volume_center_zyx = torch.tensor([d2, d2, d2]).float()
 
     # Setup plane geometry - sample tilt in microscope
-    M_tilt_sample_in_scope = Ry(sample_tilt_y, zyx=True) @ Rx(sample_tilt_x, zyx=True)
+    M_tilt_sample = Ry(sample_tilt_y, zyx=True) @ Rx(sample_tilt_x, zyx=True)
 
     # Generate points on a tilted xy plane in the microscope
     # Create regular grid across xy
@@ -75,7 +75,7 @@ def _generate_tilted_plane_tilt_series(
 
     # Apply sample tilt transformation to points
     points_in_scope_zyxw_col = xy_plane_zyxw_col[idx_subset]
-    points_in_scope_zyxw_col = M_tilt_sample_in_scope @ points_in_scope_zyxw_col
+    points_in_scope_zyxw_col = M_tilt_sample @ points_in_scope_zyxw_col
     points_in_scope_zyxw = einops.rearrange(points_in_scope_zyxw_col, "b zyxw 1 -> b zyxw")
     points_in_scope_zyx = points_in_scope_zyxw[..., :3]
 
@@ -92,15 +92,19 @@ def _generate_tilted_plane_tilt_series(
     if tilt_angles_deg is None:
         tilt_angles_deg = torch.linspace(-60, 60, steps=41)
 
-    # Setup scope2detector transformation
-    M_scope2detector = Rz(tilt_axis_angle, zyx=True) @ Ry(tilt_angles_deg, zyx=True)
+    # Setup tomogram -> scope -> detector transformations
+    M_stage_tilt = Ry(tilt_angles_deg, zyx=True)
+    M_scope2detector = Rz(tilt_axis_angle, zyx=True)
+
+    # Compose tomogram -> detector (projection) transformation
+    M_tomo2detector = M_scope2detector @ M_stage_tilt
 
     # Generate tilt series
-    M_scope2detector_rot = M_scope2detector[:, :3, :3]
-    M_scope2detector_rot_inv = torch.linalg.pinv(M_scope2detector_rot)
+    M_tomo2detector_rot = M_tomo2detector[:, :3, :3]
+    M_tomo2detector_rot_inv = torch.linalg.pinv(M_tomo2detector_rot)
     tilt_series = project_3d_to_2d(
         volume=volume_in_scope,
-        rotation_matrices=M_scope2detector_rot_inv,
+        rotation_matrices=M_tomo2detector_rot_inv,
         zyx_matrices=True,
     )
 

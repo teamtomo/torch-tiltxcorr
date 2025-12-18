@@ -98,13 +98,13 @@ def generate_tilted_plane_tilt_series(
     rng = np.random.default_rng(seed=seed)
     idx_subset = rng.choice(b, size=(n_points_on_plane,), replace=False)
 
-    # Apply sample tilt transformation to points
+    # Apply sample tilt transformation to points in microscope coordinate system
     points_in_scope_zyxw_col = xy_plane_zyxw_col[idx_subset]
     points_in_scope_zyxw_col = M_tilt_sample_in_scope @ points_in_scope_zyxw_col
     points_in_scope_zyxw = einops.rearrange(points_in_scope_zyxw_col, "b zyxw 1 -> b zyxw")
     points_in_scope_zyx = points_in_scope_zyxw[..., :3]
 
-    # Create 3D volume with points on the tilted plane
+    # Create ground truth 3D volume with points on the tilted plane
     points_in_volume = points_in_scope_zyx + volume_center_zyx
     volume_in_scope = torch.zeros((d, d, d)).float()
     volume_in_scope, _ = insert_into_image_3d(
@@ -117,8 +117,12 @@ def generate_tilted_plane_tilt_series(
     if tilt_angles_deg is None:
         tilt_angles_deg = torch.linspace(-60, 60, steps=41)
 
-    # Setup scope2detector transformation
-    M_scope2detector = Rz(tilt_axis_angle, zyx=True) @ Ry(tilt_angles_deg, zyx=True)
+    # Setup scope -> detector transformations
+    M_stage_tilt = Ry(tilt_angles_deg, zyx=True)
+    M_scope2detector = Rz(tilt_axis_angle, zyx=True)
+
+    # compose scope -> detector (projection) transformation
+    M_scope2detector = M_scope2detector @ M_stage_tilt
 
     # Generate tilt series
     M_scope2detector_rot = M_scope2detector[:, :3, :3]
